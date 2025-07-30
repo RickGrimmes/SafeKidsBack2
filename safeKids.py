@@ -14,19 +14,63 @@ TIPOS_PERMITIDOS = {"AUTHORIZEDS", "GUARDIANS", "STUDENTS", "USERS"}
 #region UploadImages
 
 # --- Función auxiliar para guardar imagen ---
-def guardar_imagen(escuela, tipo, file: UploadFile):
+import unicodedata
+def quitar_acentos(texto):
+    return ''.join((c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn'))
+
+def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, lastName: str):
     if tipo not in TIPOS_PERMITIDOS:
         return False, f"Tipo de usuario no permitido: {tipo}"
     from PIL import Image
     ruta = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, tipo)
     os.makedirs(ruta, exist_ok=True)
-    # Usar el mismo nombre pero extensión .jpg
-    nombre_base = os.path.splitext(file.filename)[0]
-    nombre_archivo = f"{nombre_base}.jpg"
+    # Construir nombre de archivo: ID_FIRSTNAMELASTNAME.jpg, todo mayúsculas y sin acentos
+    id_clean = quitar_acentos(str(id)).upper()
+    first_clean = quitar_acentos(str(firstName)).replace(' ', '').upper()
+    last_clean = quitar_acentos(str(lastName)).replace(' ', '').upper()
+    nombre_archivo = f"{id_clean}_{first_clean}{last_clean}.jpg"
     ruta_completa = os.path.join(ruta, nombre_archivo)
     try:
+        # Validar si ya existe una imagen con ese nombre
+        if os.path.exists(ruta_completa):
+            return False, "Ya existe una imagen de ese usuario. No se puede sobrescribir." 
         contents = file.file.read()
         img = Image.open(BytesIO(contents)).convert("RGB")
+        # Validar que haya exactamente un rostro
+        import numpy as np
+        from deepface import DeepFace
+        import cv2
+        img_np = np.array(img)
+        try:
+            deteccion = DeepFace.extract_faces(img_np, enforce_detection=True)
+        except Exception as e:
+            return False, "No se detectó ningún rostro en la imagen. Por favor, sube una foto donde se vea claramente tu cara."
+        if not isinstance(deteccion, list) or len(deteccion) != 1:
+            return False, "La imagen debe contener exactamente un rostro visible y bien definido."
+        # Validación de tamaño mínimo del rostro
+        face = deteccion[0]
+        region = face.get('facial_area') or face.get('region')
+        if not region:
+            return False, "No se pudo determinar el área del rostro."
+        w = region.get('w') or region.get('width')
+        h = region.get('h') or region.get('height')
+        if not w or not h:
+            return False, "No se pudo determinar el tamaño del rostro."
+        min_side = min(img_np.shape[0], img_np.shape[1])
+        if w < min_side * 0.2 or h < min_side * 0.2:
+            return False, "El rostro es demasiado pequeño en la imagen. Acércate más a la cámara."
+        # Validación de nitidez (enfoque)
+        img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        laplacian_var = cv2.Laplacian(img_gray, cv2.CV_64F).var()
+        if laplacian_var < 30:
+            return False, "La imagen está borrosa. Por favor, asegúrate de que la foto esté bien enfocada."
+        # Validación de brillo
+        brightness = np.mean(img_gray)
+        if brightness < 50:
+            return False, "La imagen está demasiado oscura. Busca mejor iluminación."
+        if brightness > 230:
+            return False, "La imagen está demasiado clara o sobreexpuesta."
+        # Si pasa todas las validaciones, guardar como JPEG comprimido
         img.save(ruta_completa, format="JPEG", quality=80, optimize=True)
         return True, ruta_completa
     except Exception as e:
@@ -34,44 +78,44 @@ def guardar_imagen(escuela, tipo, file: UploadFile):
 
 # --- Endpoint para subir imagen de authorized people ---
 @app.post("/upload/authorizeds")
-async def upload_authorizeds(escuela: str = File(...), file: UploadFile = File(...)):
+async def upload_authorizeds(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
     if not os.path.isdir(ruta_escuela):
         return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "AUTHORIZEDS", file)
+    ok, msg = guardar_imagen(escuela, "AUTHORIZEDS", file, id, firstName, lastName)
     if ok:
         return {"mensaje": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"error": msg}, status_code=400)
 
 # --- Endpoint para subir imagen de guardian ---
 @app.post("/upload/guardians")
-async def upload_guardians(escuela: str = File(...), file: UploadFile = File(...)):
+async def upload_guardians(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
     if not os.path.isdir(ruta_escuela):
         return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "GUARDIANS", file)
+    ok, msg = guardar_imagen(escuela, "GUARDIANS", file, id, firstName, lastName)
     if ok:
         return {"mensaje": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"error": msg}, status_code=400)
 
 # --- Endpoint para subir imagen de student ---
 @app.post("/upload/students")
-async def upload_students(escuela: str = File(...), file: UploadFile = File(...)):
+async def upload_students(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
     if not os.path.isdir(ruta_escuela):
         return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "STUDENTS", file)
+    ok, msg = guardar_imagen(escuela, "STUDENTS", file, id, firstName, lastName)
     if ok:
         return {"mensaje": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"error": msg}, status_code=400)
 
 # --- Endpoint para subir imagen de user ---
 @app.post("/upload/users")
-async def upload_users(escuela: str = File(...), file: UploadFile = File(...)):
+async def upload_users(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
     if not os.path.isdir(ruta_escuela):
         return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "USERS", file)
+    ok, msg = guardar_imagen(escuela, "USERS", file, id, firstName, lastName)
     if ok:
         return {"mensaje": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"error": msg}, status_code=400)
