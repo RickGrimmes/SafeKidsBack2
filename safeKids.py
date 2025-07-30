@@ -11,21 +11,26 @@ app = FastAPI()
 # --- Constantes de tipos permitidos ---
 TIPOS_PERMITIDOS = {"AUTHORIZEDS", "GUARDIANS", "STUDENTS", "USERS"}
 
+#region UploadImages
+
 # --- Función auxiliar para guardar imagen ---
 def guardar_imagen(escuela, tipo, file: UploadFile):
     if tipo not in TIPOS_PERMITIDOS:
         return False, f"Tipo de usuario no permitido: {tipo}"
+    from PIL import Image
     ruta = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, tipo)
     os.makedirs(ruta, exist_ok=True)
-    nombre_archivo = file.filename
+    # Usar el mismo nombre pero extensión .jpg
+    nombre_base = os.path.splitext(file.filename)[0]
+    nombre_archivo = f"{nombre_base}.jpg"
     ruta_completa = os.path.join(ruta, nombre_archivo)
-    with open(ruta_completa, "wb") as f:
-        f.write(file.file.read())
-    return True, ruta_completa
-
-# --- Endpoints para cada tipo de usuario ---
-
-#region AUTHORIZED PEOPLE
+    try:
+        contents = file.file.read()
+        img = Image.open(BytesIO(contents)).convert("RGB")
+        img.save(ruta_completa, format="JPEG", quality=80, optimize=True)
+        return True, ruta_completa
+    except Exception as e:
+        return False, f"Error al guardar la imagen: {e}"
 
 # --- Endpoint para subir imagen de authorized people ---
 @app.post("/upload/authorizeds")
@@ -38,46 +43,6 @@ async def upload_authorizeds(escuela: str = File(...), file: UploadFile = File(.
         return {"mensaje": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"error": msg}, status_code=400)
 
-# --- Endpoint para buscar el authorized people más parecido en una escuela ---
-@app.post("/busca/authorizeds")
-async def busca_authorizeds(escuela: str = File(...), file: UploadFile = File(...)):
-    import numpy as np
-    from PIL import Image
-    from deepface import DeepFace
-    import glob
-    ruta_authorizeds = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "AUTHORIZEDS")
-    if not os.path.isdir(ruta_authorizeds):
-        return JSONResponse(content={"error": f"La carpeta de authorized en la escuela '{escuela}' no existe."}, status_code=400)
-    # Leer imagen enviada
-    contents = await file.read()
-    img_query = Image.open(BytesIO(contents))
-    img_query_np = np.array(img_query)
-    # Buscar todas las imágenes en la carpeta usando DeepFace.find
-    if not os.listdir(ruta_authorizeds):
-        return JSONResponse(content={"error": "No hay imágenes en la carpeta authorized."}, status_code=404)
-    # Guardar la imagen recibida temporalmente
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-        img_query.save(tmp, format='JPEG')
-        tmp_path = tmp.name
-    try:
-        df = DeepFace.find(img_path=tmp_path, db_path=ruta_authorizeds, enforce_detection=False, model_name='Facenet')
-    finally:
-        os.remove(tmp_path)
-    # DeepFace.find puede devolver un DataFrame o una lista de DataFrames
-    if isinstance(df, list):
-        df = df[0]
-    if df.empty:
-        return JSONResponse(content={"error": "No se encontró ninguna coincidencia válida."}, status_code=404)
-    mejor = df.iloc[0]
-    porcentaje = round((1 - mejor['distance']) * 100, 2)
-    if porcentaje <= 60:
-        return JSONResponse(content={"error": "No se encontró ninguna coincidencia con al menos 60% de similitud."}, status_code=404)
-    return {"archivo": os.path.basename(mejor['identity']), "porcentaje_similitud": porcentaje}
-#endregion
-
-#region GUARDIANS
-
 # --- Endpoint para subir imagen de guardian ---
 @app.post("/upload/guardians")
 async def upload_guardians(escuela: str = File(...), file: UploadFile = File(...)):
@@ -89,46 +54,6 @@ async def upload_guardians(escuela: str = File(...), file: UploadFile = File(...
         return {"mensaje": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"error": msg}, status_code=400)
 
-# --- Endpoint para buscar el guardian más parecido en una escuela ---
-@app.post("/busca/guardian")
-async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...)):
-    import numpy as np
-    from PIL import Image
-    from deepface import DeepFace
-    import glob
-    ruta_guardians = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "GUARDIANS")
-    if not os.path.isdir(ruta_guardians):
-        return JSONResponse(content={"error": f"La carpeta de guardians en la escuela '{escuela}' no existe."}, status_code=400)
-    # Leer imagen enviada
-    contents = await file.read()
-    img_query = Image.open(BytesIO(contents))
-    img_query_np = np.array(img_query)
-    # Buscar todas las imágenes en la carpeta usando DeepFace.find
-    if not os.listdir(ruta_guardians):
-        return JSONResponse(content={"error": "No hay imágenes en la carpeta guardians."}, status_code=404)
-    # Guardar la imagen recibida temporalmente
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-        img_query.save(tmp, format='JPEG')
-        tmp_path = tmp.name
-    try:
-        df = DeepFace.find(img_path=tmp_path, db_path=ruta_guardians, enforce_detection=False, model_name='Facenet')
-    finally:
-        os.remove(tmp_path)
-    # DeepFace.find puede devolver un DataFrame o una lista de DataFrames
-    if isinstance(df, list):
-        df = df[0]
-    if df.empty:
-        return JSONResponse(content={"error": "No se encontró ninguna coincidencia válida."}, status_code=404)
-    mejor = df.iloc[0]
-    porcentaje = round((1 - mejor['distance']) * 100, 2)
-    if porcentaje <= 60:
-        return JSONResponse(content={"error": "No se encontró ninguna coincidencia con al menos 60% de similitud."}, status_code=404)
-    return {"archivo": os.path.basename(mejor['identity']), "porcentaje_similitud": porcentaje}
-#endregion
-
-#region STUDENTS
-
 # --- Endpoint para subir imagen de student ---
 @app.post("/upload/students")
 async def upload_students(escuela: str = File(...), file: UploadFile = File(...)):
@@ -139,6 +64,70 @@ async def upload_students(escuela: str = File(...), file: UploadFile = File(...)
     if ok:
         return {"mensaje": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"error": msg}, status_code=400)
+
+# --- Endpoint para subir imagen de user ---
+@app.post("/upload/users")
+async def upload_users(escuela: str = File(...), file: UploadFile = File(...)):
+    ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
+    if not os.path.isdir(ruta_escuela):
+        return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+    ok, msg = guardar_imagen(escuela, "USERS", file)
+    if ok:
+        return {"mensaje": f"Imagen guardada en {msg}"}
+    return JSONResponse(content={"error": msg}, status_code=400)
+
+#endregion  
+
+#region BuscaPersonas
+
+# --- Endpoint para buscar el guardian más parecido en una escuela, si no, entonces busca al authorized ---
+@app.post("/busca/guardianAuthPeople")
+async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...)):
+    import numpy as np
+    from PIL import Image
+    from deepface import DeepFace
+    import glob
+    import tempfile
+    # Leer imagen enviada
+    contents = await file.read()
+    img_query = Image.open(BytesIO(contents))
+    img_query_np = np.array(img_query)
+    # --- Buscar en GUARDIANS ---
+    ruta_guardians = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "GUARDIANS")
+    if os.path.isdir(ruta_guardians) and os.listdir(ruta_guardians):
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+            img_query.save(tmp, format='JPEG')
+            tmp_path = tmp.name
+        try:
+            df = DeepFace.find(img_path=tmp_path, db_path=ruta_guardians, enforce_detection=False, model_name='Facenet')
+        finally:
+            os.remove(tmp_path)
+        if isinstance(df, list):
+            df = df[0]
+        if not df.empty:
+            for _, row in df.iterrows():
+                porcentaje = round((1 - row['distance']) * 100, 2)
+                if porcentaje >= 80:
+                    return {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "GUARDIAN"}
+    # --- Buscar en AUTHORIZEDS ---
+    ruta_authorizeds = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "AUTHORIZEDS")
+    if os.path.isdir(ruta_authorizeds) and os.listdir(ruta_authorizeds):
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+            img_query.save(tmp, format='JPEG')
+            tmp_path = tmp.name
+        try:
+            df = DeepFace.find(img_path=tmp_path, db_path=ruta_authorizeds, enforce_detection=False, model_name='Facenet')
+        finally:
+            os.remove(tmp_path)
+        if isinstance(df, list):
+            df = df[0]
+        if not df.empty:
+            for _, row in df.iterrows():
+                porcentaje = round((1 - row['distance']) * 100, 2)
+                if porcentaje >= 80:
+                    return {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "AUTHORIZED"}
+    # Si no encontró nada en ninguno
+    return JSONResponse(content={"error": "No se encontró ninguna coincidencia válida en guardians ni authorizeds con al menos 80% de similitud."}, status_code=404)
 
 # --- Endpoint para buscar el student más parecido en una escuela ---
 @app.post("/busca/student")
@@ -176,63 +165,13 @@ async def busca_student(escuela: str = File(...), file: UploadFile = File(...)):
     if porcentaje <= 60:
         return JSONResponse(content={"error": "No se encontró ninguna coincidencia con al menos 60% de similitud."}, status_code=404)
     return {"archivo": os.path.basename(mejor['identity']), "porcentaje_similitud": porcentaje}
-#endregion
 
-#region USERS
-
-# --- Endpoint para subir imagen de user ---
-@app.post("/upload/users")
-async def upload_users(escuela: str = File(...), file: UploadFile = File(...)):
-    ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
-    if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "USERS", file)
-    if ok:
-        return {"mensaje": f"Imagen guardada en {msg}"}
-    return JSONResponse(content={"error": msg}, status_code=400)
-
-# --- Endpoint para buscar el user más parecido en una escuela ---
-@app.post("/busca/user")
-async def busca_user(escuela: str = File(...), file: UploadFile = File(...)):
-    import numpy as np
-    from PIL import Image
-    from deepface import DeepFace
-    import glob
-    ruta_users = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "USERS")
-    if not os.path.isdir(ruta_users):
-        return JSONResponse(content={"error": f"La carpeta de users en la escuela '{escuela}' no existe."}, status_code=400)
-    # Leer imagen enviada
-    contents = await file.read()
-    img_query = Image.open(BytesIO(contents))
-    img_query_np = np.array(img_query)
-    # Buscar todas las imágenes en la carpeta usando DeepFace.find
-    if not os.listdir(ruta_users):
-        return JSONResponse(content={"error": "No hay imágenes en la carpeta users."}, status_code=404)
-    # Guardar la imagen recibida temporalmente
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-        img_query.save(tmp, format='JPEG')
-        tmp_path = tmp.name
-    try:
-        df = DeepFace.find(img_path=tmp_path, db_path=ruta_users, enforce_detection=False, model_name='Facenet')
-    finally:
-        os.remove(tmp_path)
-    # DeepFace.find puede devolver un DataFrame o una lista de DataFrames
-    if isinstance(df, list):
-        df = df[0]
-    if df.empty:
-        return JSONResponse(content={"error": "No se encontró ninguna coincidencia válida."}, status_code=404)
-    mejor = df.iloc[0]
-    porcentaje = round((1 - mejor['distance']) * 100, 2)
-    if porcentaje <= 60:
-        return JSONResponse(content={"error": "No se encontró ninguna coincidencia con al menos 60% de similitud."}, status_code=404)
-    return {"archivo": os.path.basename(mejor['identity']), "porcentaje_similitud": porcentaje}
 #endregion
 
 #region PRUEBA
 
 @app.get("/imagendurisima")
-def image_chingona():
+def image_maquiavelicamenteLetal():
     url = "https://static.wikia.nocookie.net/heroe/images/c/c4/AiAi_SMBBR.png/revision/latest?cb=20240710005028&path-prefix=es"
     response = requests.get(url)
     if response.status_code == 200:
