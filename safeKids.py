@@ -76,56 +76,57 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
     except Exception as e:
         return False, f"Error al guardar la imagen: {e}"
 
+
 # --- Endpoint para subir imagen de authorized people ---
-@app.post("/upload/authorizeds")
+@app.post("/api2/upload/authorizeds")
 async def upload_authorizeds(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
     if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+        return JSONResponse(content={"success": False, "message": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
     ok, msg = guardar_imagen(escuela, "AUTHORIZEDS", file, id, firstName, lastName)
     if ok:
-        return {"mensaje": f"Imagen guardada en {msg}"}
-    return JSONResponse(content={"error": msg}, status_code=400)
+        return {"success": True, "message": f"Imagen guardada en {msg}"}
+    return JSONResponse(content={"success": False, "message": msg}, status_code=400)
 
 # --- Endpoint para subir imagen de guardian ---
-@app.post("/upload/guardians")
+@app.post("/api2/upload/guardians")
 async def upload_guardians(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
     if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+        return JSONResponse(content={"success": False, "message": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
     ok, msg = guardar_imagen(escuela, "GUARDIANS", file, id, firstName, lastName)
     if ok:
-        return {"mensaje": f"Imagen guardada en {msg}"}
-    return JSONResponse(content={"error": msg}, status_code=400)
+        return {"success": True, "message": f"Imagen guardada en {msg}"}
+    return JSONResponse(content={"success": False, "message": msg}, status_code=400)
 
 # --- Endpoint para subir imagen de student ---
-@app.post("/upload/students")
+@app.post("/api2/upload/students")
 async def upload_students(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
     if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+        return JSONResponse(content={"success": False, "message": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
     ok, msg = guardar_imagen(escuela, "STUDENTS", file, id, firstName, lastName)
     if ok:
-        return {"mensaje": f"Imagen guardada en {msg}"}
-    return JSONResponse(content={"error": msg}, status_code=400)
+        return {"success": True, "message": f"Imagen guardada en {msg}"}
+    return JSONResponse(content={"success": False, "message": msg}, status_code=400)
 
 # --- Endpoint para subir imagen de user ---
-@app.post("/upload/users")
+@app.post("/api2/upload/users")
 async def upload_users(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
     if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"error": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+        return JSONResponse(content={"success": False, "message": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
     ok, msg = guardar_imagen(escuela, "USERS", file, id, firstName, lastName)
     if ok:
-        return {"mensaje": f"Imagen guardada en {msg}"}
-    return JSONResponse(content={"error": msg}, status_code=400)
+        return {"success": True, "message": f"Imagen guardada en {msg}"}
+    return JSONResponse(content={"success": False, "message": msg}, status_code=400)
 
 #endregion  
 
 #region BuscaPersonas
 
 # --- Endpoint para buscar el guardian más parecido en una escuela, si no, entonces busca al authorized ---
-@app.post("/busca/guardianAuthPeople")
+@app.post("/api2/busca/guardianAuthPeople")
 async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...)):
     import numpy as np
     from PIL import Image
@@ -152,7 +153,7 @@ async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...))
             for _, row in df.iterrows():
                 porcentaje = round((1 - row['distance']) * 100, 2)
                 if porcentaje >= 80:
-                    return {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "GUARDIAN"}
+                    return {"success": True, "message": "Coincidencia encontrada en GUARDIANS", "data": {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "GUARDIAN"}}
     # --- Buscar en AUTHORIZEDS ---
     ruta_authorizeds = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "AUTHORIZEDS")
     if os.path.isdir(ruta_authorizeds) and os.listdir(ruta_authorizeds):
@@ -169,12 +170,12 @@ async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...))
             for _, row in df.iterrows():
                 porcentaje = round((1 - row['distance']) * 100, 2)
                 if porcentaje >= 80:
-                    return {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "AUTHORIZED"}
+                    return {"success": True, "message": "Coincidencia encontrada en AUTHORIZEDS", "data": {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "AUTHORIZED"}}
     # Si no encontró nada en ninguno
-    return JSONResponse(content={"error": "No se encontró ninguna coincidencia válida en guardians ni authorizeds con al menos 80% de similitud."}, status_code=404)
+    return JSONResponse(content={"success": False, "message": "No se encontró ninguna coincidencia válida en guardians ni authorizeds con al menos 80% de similitud."}, status_code=404)
 
-# --- Endpoint para buscar el student más parecido en una escuela ---
-@app.post("/busca/student")
+# --- Endpoint para buscar el student más parecido en una escuela OSEA ENTRADA ---
+@app.post("/api2/busca/student")
 async def busca_student(escuela: str = File(...), file: UploadFile = File(...)):
     import numpy as np
     from PIL import Image
@@ -182,14 +183,14 @@ async def busca_student(escuela: str = File(...), file: UploadFile = File(...)):
     import glob
     ruta_students = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "STUDENTS")
     if not os.path.isdir(ruta_students):
-        return JSONResponse(content={"error": f"La carpeta de students en la escuela '{escuela}' no existe."}, status_code=400)
+        return JSONResponse(content={"success": False, "message": f"La carpeta de students en la escuela '{escuela}' no existe."}, status_code=400)
     # Leer imagen enviada
     contents = await file.read()
     img_query = Image.open(BytesIO(contents))
     img_query_np = np.array(img_query)
     # Buscar todas las imágenes en la carpeta usando DeepFace.find
     if not os.listdir(ruta_students):
-        return JSONResponse(content={"error": "No hay imágenes en la carpeta students."}, status_code=404)
+        return JSONResponse(content={"success": False, "message": "No hay imágenes en la carpeta students."}, status_code=404)
     # Guardar la imagen recibida temporalmente
     import tempfile
     with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
@@ -203,18 +204,41 @@ async def busca_student(escuela: str = File(...), file: UploadFile = File(...)):
     if isinstance(df, list):
         df = df[0]
     if df.empty:
-        return JSONResponse(content={"error": "No se encontró ninguna coincidencia válida."}, status_code=404)
+        return JSONResponse(content={"success": False, "message": "No se encontró ninguna coincidencia válida."}, status_code=404)
     mejor = df.iloc[0]
     porcentaje = round((1 - mejor['distance']) * 100, 2)
     if porcentaje <= 60:
-        return JSONResponse(content={"error": "No se encontró ninguna coincidencia con al menos 60% de similitud."}, status_code=404)
-    return {"archivo": os.path.basename(mejor['identity']), "porcentaje_similitud": porcentaje}
+        return JSONResponse(content={"success": False, "message": "No se encontró ninguna coincidencia con al menos 60% de similitud."}, status_code=404)
+    resultado = {
+        "success": True,
+        "message": "Coincidencia encontrada en STUDENTS",
+        "data": {
+            "archivo": os.path.basename(mejor['identity']),
+            "porcentaje_similitud": porcentaje,
+            "tipo": "STUDENT"
+        }
+    }
+    # Enviar datos a Laravel
+    try:
+        resp = requests.post(
+            "http://127.0.0.1:8002/api1/entrada/create",
+            json={
+                "archivo": resultado["data"]["archivo"],
+                "tipo": "STUDENT"
+            },
+            timeout=3
+        )
+        print("Laravel status:", resp.status_code)
+        print("Laravel response:", resp.text)
+    except Exception as e:
+        print("Error al enviar a Laravel:", e)
+    return resultado
 
 #endregion
 
 #region PRUEBA
 
-@app.get("/imagendurisima")
+@app.get("/api2/imagendurisima")
 def image_maquiavelicamenteLetal():
     url = "https://static.wikia.nocookie.net/heroe/images/c/c4/AiAi_SMBBR.png/revision/latest?cb=20240710005028&path-prefix=es"
     response = requests.get(url)
@@ -223,7 +247,7 @@ def image_maquiavelicamenteLetal():
     return JSONResponse(content={"error": "No se pudo obtener la imagen"}, status_code=404)
 
 # Nuevo endpoint para detectar si hay una persona en la imagen
-@app.post("/detecta")
+@app.post("/api2/detecta")
 async def detecta_persona(file: UploadFile = File(...)):
     try:
         contents = await file.read()
@@ -236,4 +260,5 @@ async def detecta_persona(file: UploadFile = File(...)):
         return {"persona": True, "mensaje": "Sí hay una persona en la imagen"}
     except Exception:
         return {"persona": False, "mensaje": "No se detectó ningún rostro"}
+    
 #endregion
