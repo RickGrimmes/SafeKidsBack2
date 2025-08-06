@@ -1,10 +1,15 @@
-from fastapi import FastAPI, File, UploadFile
+
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import JSONResponse, StreamingResponse
 import requests
 from io import BytesIO
 from deepface import DeepFace
 import os
 os.environ["DEEPPFACE_HOME"] = "C:/Users/babaj/.deepface"
+
+# Variable global para la ruta de imágenes
+IMG_ROUTE = "C:/Users/babaj/Documents/9C/IMAGES"
+# IMG_ROUTE = "/home/carlos/img"
 
 app = FastAPI()
 
@@ -22,7 +27,7 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
     if tipo not in TIPOS_PERMITIDOS:
         return False, f"Tipo de usuario no permitido: {tipo}"
     from PIL import Image
-    ruta = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, tipo)
+    ruta = os.path.join(IMG_ROUTE, escuela, tipo)
     os.makedirs(ruta, exist_ok=True)
     # Construir nombre de archivo: ID_FIRSTNAMELASTNAME.jpg, todo mayúsculas y sin acentos
     id_clean = quitar_acentos(str(id)).upper()
@@ -76,47 +81,41 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
     except Exception as e:
         return False, f"Error al guardar la imagen: {e}"
 
-
 # --- Endpoint para subir imagen de authorized people ---
 @app.post("/api2/upload/authorizeds")
-async def upload_authorizeds(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
-    ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
+async def upload_authorizeds(school_id: int = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
+    nombre_carpeta = str(school_id)
+    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
     if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"success": False, "message": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "AUTHORIZEDS", file, id, firstName, lastName)
+        return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+    ok, msg = guardar_imagen(nombre_carpeta, "AUTHORIZEDS", file, id, firstName, lastName)
     if ok:
         return {"success": True, "message": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"success": False, "message": msg}, status_code=400)
 
 # --- Endpoint para subir imagen de guardian ---
 @app.post("/api2/upload/guardians")
-async def upload_guardians(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
-    ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
+async def upload_guardians(school_id: int = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
+    nombre_carpeta = str(school_id)
+    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
     if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"success": False, "message": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "GUARDIANS", file, id, firstName, lastName)
+        return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+    ok, msg = guardar_imagen(nombre_carpeta, "GUARDIANS", file, id, firstName, lastName)
     if ok:
         return {"success": True, "message": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"success": False, "message": msg}, status_code=400)
 
-# --- Endpoint para subir imagen de student ---
-@app.post("/api2/upload/students")
-async def upload_students(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
-    ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
-    if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"success": False, "message": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "STUDENTS", file, id, firstName, lastName)
-    if ok:
-        return {"success": True, "message": f"Imagen guardada en {msg}"}
-    return JSONResponse(content={"success": False, "message": msg}, status_code=400)
+
+
 
 # --- Endpoint para subir imagen de user ---
 @app.post("/api2/upload/users")
-async def upload_users(escuela: str = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
-    ruta_escuela = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela)
+async def upload_users(school_id: int = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
+    nombre_carpeta = str(school_id)
+    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
     if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"success": False, "message": f"La escuela '{escuela}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(escuela, "USERS", file, id, firstName, lastName)
+        return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+    ok, msg = guardar_imagen(nombre_carpeta, "USERS", file, id, firstName, lastName)
     if ok:
         return {"success": True, "message": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"success": False, "message": msg}, status_code=400)
@@ -138,7 +137,7 @@ async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...))
     img_query = Image.open(BytesIO(contents))
     img_query_np = np.array(img_query)
     # --- Buscar en GUARDIANS ---
-    ruta_guardians = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "GUARDIANS")
+    ruta_guardians = os.path.join(IMG_ROUTE, escuela, "GUARDIANS")
     if os.path.isdir(ruta_guardians) and os.listdir(ruta_guardians):
         with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
             img_query.save(tmp, format='JPEG')
@@ -155,7 +154,7 @@ async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...))
                 if porcentaje >= 80:
                     return {"success": True, "message": "Coincidencia encontrada en GUARDIANS", "data": {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "GUARDIAN"}}
     # --- Buscar en AUTHORIZEDS ---
-    ruta_authorizeds = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "AUTHORIZEDS")
+    ruta_authorizeds = os.path.join(IMG_ROUTE, escuela, "AUTHORIZEDS")
     if os.path.isdir(ruta_authorizeds) and os.listdir(ruta_authorizeds):
         with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
             img_query.save(tmp, format='JPEG')
@@ -181,7 +180,7 @@ async def busca_student(escuela: str = File(...), file: UploadFile = File(...)):
     from PIL import Image
     from deepface import DeepFace
     import glob
-    ruta_students = os.path.join("C:/Users/babaj/Documents/9C/IMAGES", escuela, "STUDENTS")
+    ruta_students = os.path.join(IMG_ROUTE, escuela, "STUDENTS")
     if not os.path.isdir(ruta_students):
         return JSONResponse(content={"success": False, "message": f"La carpeta de students en la escuela '{escuela}' no existe."}, status_code=400)
     # Leer imagen enviada
@@ -235,6 +234,24 @@ async def busca_student(escuela: str = File(...), file: UploadFile = File(...)):
     return resultado
 
 #endregion
+
+#region Escuelas
+@app.post("/api2/crear/escuela")
+async def crear_escuela(school_id: int = Form(...)):
+    nombre_carpeta = str(school_id)
+    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
+    if not os.path.isdir(ruta_escuela):
+        try:
+            os.makedirs(ruta_escuela, exist_ok=True)
+            # Crear subcarpetas para cada tipo permitido
+            for tipo in TIPOS_PERMITIDOS:
+                os.makedirs(os.path.join(ruta_escuela, tipo), exist_ok=True)
+            return JSONResponse(content={"success": True, "message": f"Escuela '{school_id}' creada en {ruta_escuela}"}, status_code=201)
+        except Exception as e:
+            return JSONResponse(content={"success": False, "message": f"Error al crear la escuela: {e}"}, status_code=500)
+    return JSONResponse(content={"success": True, "message": f"Escuela '{school_id}' ya existe en {ruta_escuela}."}, status_code=200)
+
+    #endregion
 
 #region PRUEBA
 
