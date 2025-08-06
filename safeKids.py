@@ -105,9 +105,6 @@ async def upload_guardians(school_id: int = File(...), id: str = File(...), firs
         return {"success": True, "message": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"success": False, "message": msg}, status_code=400)
 
-
-
-
 # --- Endpoint para subir imagen de user ---
 @app.post("/api2/upload/users")
 async def upload_users(school_id: int = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
@@ -116,6 +113,18 @@ async def upload_users(school_id: int = File(...), id: str = File(...), firstNam
     if not os.path.isdir(ruta_escuela):
         return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
     ok, msg = guardar_imagen(nombre_carpeta, "USERS", file, id, firstName, lastName)
+    if ok:
+        return {"success": True, "message": f"Imagen guardada en {msg}"}
+    return JSONResponse(content={"success": False, "message": msg}, status_code=400)
+
+# --- Endpoint para subir imagen de student ---
+@app.post("/api2/upload/students")
+async def upload_students(school_id: int = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
+    nombre_carpeta = str(school_id)
+    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
+    if not os.path.isdir(ruta_escuela):
+        return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+    ok, msg = guardar_imagen(nombre_carpeta, "STUDENTS", file, id, firstName, lastName)
     if ok:
         return {"success": True, "message": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"success": False, "message": msg}, status_code=400)
