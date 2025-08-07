@@ -1,5 +1,7 @@
 
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, Request, Body
+import glob
+import shutil
 from fastapi.responses import JSONResponse, StreamingResponse
 import requests
 from io import BytesIO
@@ -14,7 +16,7 @@ IMG_ROUTE = "C:/Users/babaj/Documents/9C/IMAGES"
 app = FastAPI()
 
 # --- Constantes de tipos permitidos ---
-TIPOS_PERMITIDOS = {"AUTHORIZEDS", "GUARDIANS", "STUDENTS", "USERS"}
+TIPOS_PERMITIDOS = {"AUTHORIZEDS", "DIRECTOR", "GUARDIANS", "SECRETARY", "STUDENTS"}
 
 #region UploadImages
 
@@ -105,14 +107,26 @@ async def upload_guardians(school_id: int = File(...), id: str = File(...), firs
         return {"success": True, "message": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"success": False, "message": msg}, status_code=400)
 
-# --- Endpoint para subir imagen de user ---
-@app.post("/api2/upload/users")
-async def upload_users(school_id: int = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
+# --- Endpoint para subir imagen de director ---
+@app.post("/api2/upload/director")
+async def upload_director(school_id: int = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
     nombre_carpeta = str(school_id)
     ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
     if not os.path.isdir(ruta_escuela):
         return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
-    ok, msg = guardar_imagen(nombre_carpeta, "USERS", file, id, firstName, lastName)
+    ok, msg = guardar_imagen(nombre_carpeta, "DIRECTOR", file, id, firstName, lastName)
+    if ok:
+        return {"success": True, "message": f"Imagen guardada en {msg}"}
+    return JSONResponse(content={"success": False, "message": msg}, status_code=400)
+
+# --- Endpoint para subir imagen de secretary ---
+@app.post("/api2/upload/secretary")
+async def upload_secretary(school_id: int = File(...), id: str = File(...), firstName: str = File(...), lastName: str = File(...), file: UploadFile = File(...)):
+    nombre_carpeta = str(school_id)
+    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
+    if not os.path.isdir(ruta_escuela):
+        return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe. Primero debe crear la carpeta de la escuela."}, status_code=400)
+    ok, msg = guardar_imagen(nombre_carpeta, "SECRETARY", file, id, firstName, lastName)
     if ok:
         return {"success": True, "message": f"Imagen guardada en {msg}"}
     return JSONResponse(content={"success": False, "message": msg}, status_code=400)
@@ -135,7 +149,7 @@ async def upload_students(school_id: int = File(...), id: str = File(...), first
 
 # --- Endpoint para buscar el guardian más parecido en una escuela, si no, entonces busca al authorized ---
 @app.post("/api2/busca/guardianAuthPeople")
-async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...)):
+async def busca_guardian(school_id: int = File(...), file: UploadFile = File(...)):
     import numpy as np
     from PIL import Image
     from deepface import DeepFace
@@ -146,7 +160,8 @@ async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...))
     img_query = Image.open(BytesIO(contents))
     img_query_np = np.array(img_query)
     # --- Buscar en GUARDIANS ---
-    ruta_guardians = os.path.join(IMG_ROUTE, escuela, "GUARDIANS")
+    nombre_carpeta = str(school_id)
+    ruta_guardians = os.path.join(IMG_ROUTE, nombre_carpeta, "GUARDIANS")
     if os.path.isdir(ruta_guardians) and os.listdir(ruta_guardians):
         with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
             img_query.save(tmp, format='JPEG')
@@ -163,7 +178,7 @@ async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...))
                 if porcentaje >= 80:
                     return {"success": True, "message": "Coincidencia encontrada en GUARDIANS", "data": {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "GUARDIAN"}}
     # --- Buscar en AUTHORIZEDS ---
-    ruta_authorizeds = os.path.join(IMG_ROUTE, escuela, "AUTHORIZEDS")
+    ruta_authorizeds = os.path.join(IMG_ROUTE, nombre_carpeta, "AUTHORIZEDS")
     if os.path.isdir(ruta_authorizeds) and os.listdir(ruta_authorizeds):
         with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
             img_query.save(tmp, format='JPEG')
@@ -184,14 +199,15 @@ async def busca_guardian(escuela: str = File(...), file: UploadFile = File(...))
 
 # --- Endpoint para buscar el student más parecido en una escuela OSEA ENTRADA ---
 @app.post("/api2/busca/student")
-async def busca_student(escuela: str = File(...), file: UploadFile = File(...)):
+async def busca_student(school_id: int = File(...), file: UploadFile = File(...)):
     import numpy as np
     from PIL import Image
     from deepface import DeepFace
     import glob
-    ruta_students = os.path.join(IMG_ROUTE, escuela, "STUDENTS")
+    nombre_carpeta = str(school_id)
+    ruta_students = os.path.join(IMG_ROUTE, nombre_carpeta, "STUDENTS")
     if not os.path.isdir(ruta_students):
-        return JSONResponse(content={"success": False, "message": f"La carpeta de students en la escuela '{escuela}' no existe."}, status_code=400)
+        return JSONResponse(content={"success": False, "message": f"La carpeta de students en la escuela '{school_id}' no existe."}, status_code=400)
     # Leer imagen enviada
     contents = await file.read()
     img_query = Image.open(BytesIO(contents))
@@ -244,7 +260,7 @@ async def busca_student(escuela: str = File(...), file: UploadFile = File(...)):
 
 #endregion
 
-#region Escuelas
+#region Crear Escuelas
 @app.post("/api2/crear/escuela")
 async def crear_escuela(school_id: int = Form(...)):
     nombre_carpeta = str(school_id)
@@ -262,6 +278,52 @@ async def crear_escuela(school_id: int = Form(...)):
 
     #endregion
 
+#region Eliminar 
+@app.post("/api2/eliminar/foto")
+async def eliminar_foto(
+    school_id: int = Body(...),
+    role_type: str = Body(...),
+    profilePhoto: str = Body(...)
+):
+    tipo = role_type.upper()
+    if tipo not in TIPOS_PERMITIDOS:
+        return JSONResponse(content={"success": False, "message": f"El tipo '{role_type}' no es permitido."}, status_code=400)
+    nombre_carpeta = str(school_id)
+    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
+    if not os.path.isdir(ruta_escuela):
+        return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe."}, status_code=404)
+    ruta_foto = os.path.join(ruta_escuela, tipo, profilePhoto)
+    if not os.path.isfile(ruta_foto):
+        return JSONResponse(content={"success": False, "message": f"La foto '{profilePhoto}' no existe en la escuela '{school_id}' y tipo '{tipo}'."}, status_code=404)
+    try:
+        os.remove(ruta_foto)
+        return {"success": True, "message": f"Foto '{profilePhoto}' eliminada exitosamente de la escuela '{school_id}' y tipo '{tipo}'."}
+    except Exception as e:
+        return JSONResponse(content={"success": False, "message": f"Error al eliminar la foto: {e}"}, status_code=500)
+
+@app.post("/api2/eliminar/escuela")
+async def eliminar_escuela(school_id: int = Body(...)):
+    nombre_carpeta = str(school_id)
+    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
+    if not os.path.isdir(ruta_escuela):
+        return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe."}, status_code=404)
+    # Revisar cada subcarpeta
+    for subcarpeta in os.listdir(ruta_escuela):
+        ruta_sub = os.path.join(ruta_escuela, subcarpeta)
+        if os.path.isdir(ruta_sub):
+            archivos_jpg = glob.glob(os.path.join(ruta_sub, "*.jpg"))
+            if archivos_jpg:
+                return JSONResponse(content={"success": False, "message": f"No se puede eliminar la escuela '{school_id}' porque la carpeta '{subcarpeta}' tiene imágenes de usuarios."}, status_code=400)
+    # Si no hay imágenes, eliminar toda la escuela
+    try:
+        shutil.rmtree(ruta_escuela)
+        return {"success": True, "message": f"Escuela '{school_id}' eliminada exitosamente con todas sus carpetas."}
+    except Exception as e:
+        return JSONResponse(content={"success": False, "message": f"Error al eliminar la escuela: {e}"}, status_code=500)
+
+
+#endregion
+
 #region PRUEBA
 
 @app.get("/api2/imagendurisima")
@@ -274,17 +336,21 @@ def image_maquiavelicamenteLetal():
 
 # Nuevo endpoint para detectar si hay una persona en la imagen
 @app.post("/api2/detecta")
-async def detecta_persona(file: UploadFile = File(...)):
+async def detecta_persona(request: Request):
     try:
-        contents = await file.read()
+        contents = await request.body()
         img_bytes = BytesIO(contents)
-        import numpy as np
         from PIL import Image
+        import numpy as np
+
         img = Image.open(img_bytes)
         img_np = np.array(img)
+
+        # Aquí haces tu análisis con DeepFace
         DeepFace.analyze(img_np, actions=["emotion"], enforce_detection=True)
+
         return {"persona": True, "mensaje": "Sí hay una persona en la imagen"}
-    except Exception:
-        return {"persona": False, "mensaje": "No se detectó ningún rostro"}
+    except Exception as e:
+        return {"persona": False, "mensaje": f"No se detectó ningún rostro: {str(e)}"}
     
 #endregion
