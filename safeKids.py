@@ -27,41 +27,67 @@ app = FastAPI()
 # --- Constantes de tipos permitidos ---
 TIPOS_PERMITIDOS = {"AUTHORIZEDS", "DIRECTOR", "GUARDIANS", "SECRETARY", "STUDENTS"}
 
-# --- Variable global para student_mode con persistencia POR ESCUELA ---
-STUDENT_MODES_FILE = "student_modes.json"
+# --- Variable global para school_states con persistencia POR ESCUELA ---
+SCHOOL_STATES_FILE = "school_states.json"
 
-def load_student_modes():
-    """Cargar student_modes desde archivo - diccionario por escuela"""
+def load_school_states():
+    """Cargar school_states desde archivo - diccionario por escuela"""
     try:
-        if os.path.exists(STUDENT_MODES_FILE):
-            with open(STUDENT_MODES_FILE, 'r') as f:
+        if os.path.exists(SCHOOL_STATES_FILE):
+            with open(SCHOOL_STATES_FILE, 'r') as f:
                 data = json.load(f)
                 return data
     except:
         pass
     return {}
 
-def save_student_modes(modes_dict: dict):
-    """Guardar student_modes en archivo"""
+def save_school_states(states_dict: dict):
+    """Guardar school_states en archivo"""
     try:
-        with open(STUDENT_MODES_FILE, 'w') as f:
-            json.dump(modes_dict, f, indent=2)
+        with open(SCHOOL_STATES_FILE, 'w') as f:
+            json.dump(states_dict, f, indent=2)
         return True
     except:
         return False
 
+def load_student_modes():
+    """Cargar student_modes desde archivo - BACKWARD COMPATIBILITY"""
+    return load_school_states()
+
+def save_student_modes(modes_dict: dict):
+    """Guardar student_modes en archivo - BACKWARD COMPATIBILITY"""
+    return save_school_states(modes_dict)
+
 def get_school_student_mode(school_id: int):
-    """Obtener student_mode de una escuela específica"""
-    return student_modes.get(str(school_id), False)
+    """Obtener student_mode de una escuela específica - BACKWARD COMPATIBILITY"""
+    state = school_states.get(str(school_id), "normal")
+    return state == "salida_students"
 
 def set_school_student_mode(school_id: int, mode: bool):
-    """Establecer student_mode para una escuela específica"""
-    global student_modes
-    student_modes[str(school_id)] = mode
-    return save_student_modes(student_modes)
+    """Establecer student_mode para una escuela específica - BACKWARD COMPATIBILITY"""
+    global school_states
+    if mode:
+        school_states[str(school_id)] = "salida_students"
+    else:
+        school_states[str(school_id)] = "normal"
+    return save_school_states(school_states)
 
-# Cargar el estado inicial - ahora es un diccionario por escuela
-student_modes = load_student_modes()
+def get_school_state(school_id: int):
+    """Obtener el estado actual de una escuela"""
+    return school_states.get(str(school_id), "normal")
+
+def set_school_state(school_id: int, state: str):
+    """Establecer el estado de una escuela específica"""
+    global school_states
+    valid_states = ["normal", "salida_guardian", "salida_students"]
+    if state not in valid_states:
+        return False
+    school_states[str(school_id)] = state
+    return save_school_states(school_states)
+
+# Cargar el estado inicial - ahora es un diccionario por escuela con estados múltiples
+school_states = load_school_states()
+student_modes = load_school_states()  # Para compatibilidad backward
 
 #region UploadImages
 
@@ -122,7 +148,7 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
             return False, "La imagen está demasiado oscura. Busca mejor iluminación."
         if brightness > 240: 
             return False, "La imagen está demasiado clara o sobreexpuesta."
-        img.save(ruta_completa, format="JPEG", quality=80, optimize=True)
+        img.save(ruta_completa, format="JPG", quality=80, optimize=True)
         return True, ruta_completa
     except Exception as e:
         return False, f"Error al guardar la imagen: {e}"
@@ -189,107 +215,6 @@ async def upload_students(school_id: int = File(...), id: str = File(...), first
 
 #endregion  
 
-#region UpdateImages
-
-# --- Endpoint para actualizar/reemplazar foto de estudiante ---
-@app.post("/api2/update/student/photo")
-async def update_student_photo(school_id: int = File(...), student_photo: str = File(...), file: UploadFile = File(...)):
-    from PIL import Image
-    import numpy as np
-    import cv2
-    
-    nombre_carpeta = str(school_id)
-    ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
-    
-    # Verificar que la escuela existe
-    if not os.path.isdir(ruta_escuela):
-        return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe."}, status_code=400)
-    
-    # Ruta de la carpeta STUDENTS
-    ruta_students = os.path.join(ruta_escuela, "STUDENTS")
-    if not os.path.isdir(ruta_students):
-        return JSONResponse(content={"success": False, "message": f"La carpeta STUDENTS de la escuela '{school_id}' no existe."}, status_code=400)
-    
-    # Ruta completa del archivo a actualizar
-    ruta_archivo_actual = os.path.join(ruta_students, student_photo)
-    
-    # Verificar que el archivo existe
-    if not os.path.exists(ruta_archivo_actual):
-        return JSONResponse(content={"success": False, "message": f"El archivo '{student_photo}' no existe en la carpeta STUDENTS."}, status_code=404)
-    
-    try:
-        # Leer y validar la nueva imagen
-        contents = file.file.read()
-        img = Image.open(BytesIO(contents)).convert("RGB")
-        img_np = np.array(img)
-        
-        # Validar que haya exactamente un rostro
-        try:
-            deteccion = DeepFace.extract_faces(img_np, enforce_detection=False)
-        except Exception as e:
-            return JSONResponse(content={"success": False, "message": "No se detectó ningún rostro en la imagen. Por favor, sube una foto donde se vea claramente la cara."}, status_code=400)
-        
-        if not isinstance(deteccion, list) or len(deteccion) < 1:  
-            return JSONResponse(content={"success": False, "message": "La imagen debe contener al menos un rostro visible."}, status_code=400)
-        
-        # Validación de tamaño mínimo del rostro
-        face = deteccion[0]
-        region = face.get('facial_area') or face.get('region')
-        if not region:
-            return JSONResponse(content={"success": False, "message": "No se pudo determinar el área del rostro."}, status_code=400)
-        
-        w = region.get('w') or region.get('width')
-        h = region.get('h') or region.get('height')
-        if not w or not h:
-            return JSONResponse(content={"success": False, "message": "No se pudo determinar el tamaño del rostro."}, status_code=400)
-        
-        min_side = min(img_np.shape[0], img_np.shape[1])
-        if w < min_side * 0.1 or h < min_side * 0.1: 
-            return JSONResponse(content={"success": False, "message": "El rostro es demasiado pequeño en la imagen. Acércate más a la cámara."}, status_code=400)
-        
-        # Validación de nitidez (enfoque)
-        img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-        laplacian_var = cv2.Laplacian(img_gray, cv2.CV_64F).var()
-        if laplacian_var < 15: 
-            return JSONResponse(content={"success": False, "message": "La imagen está borrosa. Por favor, asegúrate de que la foto esté bien enfocada."}, status_code=400)
-        
-        # Validación de brillo
-        brightness = np.mean(img_gray)
-        if brightness < 30:  
-            return JSONResponse(content={"success": False, "message": "La imagen está demasiado oscura. Busca mejor iluminación."}, status_code=400)
-        if brightness > 240: 
-            return JSONResponse(content={"success": False, "message": "La imagen está demasiado clara o sobreexpuesta."}, status_code=400)
-        
-        # ELIMINAR archivo anterior
-        try:
-            os.remove(ruta_archivo_actual)
-            print(f"[UPDATE] Archivo anterior eliminado: {ruta_archivo_actual}")
-        except Exception as e:
-            return JSONResponse(content={"success": False, "message": f"Error al eliminar archivo anterior: {e}"}, status_code=500)
-        
-        # GUARDAR nueva imagen con el mismo nombre
-        try:
-            img.save(ruta_archivo_actual, format="JPEG", quality=80, optimize=True)
-            print(f"[UPDATE] Nueva imagen guardada: {ruta_archivo_actual}")
-        except Exception as e:
-            return JSONResponse(content={"success": False, "message": f"Error al guardar nueva imagen: {e}"}, status_code=500)
-        
-        return {
-            "success": True, 
-            "message": f"Foto del estudiante actualizada exitosamente: {student_photo}",
-            "data": {
-                "school_id": school_id,
-                "archivo_actualizado": student_photo,
-                "ruta_completa": ruta_archivo_actual,
-                "updated_at": datetime.now().isoformat()
-            }
-        }
-        
-    except Exception as e:
-        return JSONResponse(content={"success": False, "message": f"Error al procesar la imagen: {e}"}, status_code=500)
-
-#endregion
-
 #region BuscaPersonas
 
 # --- Endpoint para buscar el guardian más parecido en una escuela, si no, entonces busca al authorized ---
@@ -320,7 +245,7 @@ async def busca_guardian(school_id: int = File(...), file: UploadFile = File(...
         if not df.empty:
             for _, row in df.iterrows():
                 porcentaje = round((1 - row['distance']) * 100, 2)
-                if porcentaje >= 70:
+                if porcentaje >= 60:
                     resultado = {"success": True, "message": "Coincidencia encontrada en GUARDIANS", "data": {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "GUARDIAN"}}
     
                     # NUEVO: Enviar via SSE
@@ -348,7 +273,7 @@ async def busca_guardian(school_id: int = File(...), file: UploadFile = File(...
         if not df.empty:
             for _, row in df.iterrows():
                 porcentaje = round((1 - row['distance']) * 100, 2)
-                if porcentaje >= 70:
+                if porcentaje >= 60:
                     resultado = {"success": True, "message": "Coincidencia encontrada en AUTHORIZEDS", "data": {"archivo": os.path.basename(row['identity']), "porcentaje_similitud": porcentaje, "tipo": "AUTHORIZED"}}
                     
                     # NUEVO: Enviar via SSE
@@ -405,7 +330,7 @@ async def busca_student(school_id: int = File(...), file: UploadFile = File(...)
     if isinstance(df, list):
         df = df[0]
     if df.empty:
-        error_result = {"success": False, "message": "No se encontró ninguna coincidencia válida.", "school_id": school_id}
+        error_result = {"success": False, "message": "No se encontró ninguna coincidencia válida para ese estudiante.", "school_id": school_id}
         
         # NUEVO: Enviar via SSE para error
         await send_sse_event(school_id, {
@@ -531,7 +456,122 @@ async def eliminar_escuela(school_id: int = Body(...)):
 
 #endregion
 
-#region STUDENT MODE MANAGEMENT
+#region SCHOOL STATE MANAGEMENT FOR EXIT PROCESS
+
+@app.post("/api2/iniciar-salida-escuela/{school_id}") #el cliente envia esto para que sepa la camara que busca a guardians, pido el school id
+async def iniciar_salida_escuela(school_id: int):
+    """
+    Inicia el proceso de salida para una escuela específica.
+    Cambia el estado a 'salida_guardian' para buscar solo guardianes primero.
+    """
+    try:
+        if set_school_state(school_id, "salida_guardian"):
+            resultado = {
+                "success": True,
+                "school_id": school_id,
+                "new_state": "salida_guardian",
+                "message": "Proceso de salida iniciado. Ahora buscando solo guardianes."
+            }
+            
+            # Enviar evento SSE de cambio de estado
+            await send_sse_event(school_id, {
+                "type": "state_change",
+                "state": "salida_guardian",
+                "data": resultado,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            return resultado
+        else:
+            return JSONResponse(content={
+                "success": False,
+                "error": "Error al guardar el estado"
+            }, status_code=500)
+    except Exception as e:
+        return JSONResponse(content={
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+@app.post("/api2/cambiar-a-estudiantes/{school_id}") #cambia a buscar estudiantes, igual pido el school_id
+async def cambiar_a_estudiantes(school_id: int):
+    """
+    Cambia del modo salida_guardian a salida_students.
+    Se llama cuando el cliente confirma el tutor y quiere pasar a buscar estudiantes.
+    """
+    try:
+        current_state = get_school_state(school_id)
+        
+        if current_state != "salida_guardian":
+            return JSONResponse(content={
+                "success": False, 
+                "error": f"Solo se puede cambiar a estudiantes desde estado 'salida_guardian'. Estado actual: {current_state}"
+            }, status_code=400)
+        
+        if set_school_state(school_id, "salida_students"):
+            resultado = {
+                "success": True,
+                "school_id": school_id,
+                "new_state": "salida_students",
+                "message": "Ahora buscando solo estudiantes."
+            }
+            
+            # Enviar evento SSE de cambio de estado
+            await send_sse_event(school_id, {
+                "type": "state_change",
+                "state": "salida_students",
+                "data": resultado,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            return resultado
+        else:
+            return JSONResponse(content={
+                "success": False,
+                "error": "Error al guardar el estado"
+            }, status_code=500)
+    except Exception as e:
+        return JSONResponse(content={
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+@app.post("/api2/terminar-salida-escuela/{school_id}")
+async def terminar_salida_escuela(school_id: int):
+    """
+    Termina el proceso de salida para una escuela específica.
+    Regresa el estado a 'normal' para operación regular.
+    """
+    try:
+        if set_school_state(school_id, "normal"):
+            resultado = {
+                "success": True,
+                "school_id": school_id,
+                "new_state": "normal",
+                "message": "Proceso de salida terminado. Modo normal activado."
+            }
+            
+            # Enviar evento SSE de cambio de estado
+            await send_sse_event(school_id, {
+                "type": "state_change",
+                "state": "normal",
+                "data": resultado,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            return resultado
+        else:
+            return JSONResponse(content={
+                "success": False,
+                "error": "Error al guardar el estado"
+            }, status_code=500)
+    except Exception as e:
+        return JSONResponse(content={
+            "success": False,
+            "error": str(e)
+        }, status_code=500)
+
+#endregion
 
 # --- Endpoint para toggle student_mode POR ESCUELA ---
 @app.post("/api2/toggle-student-mode")
@@ -581,6 +621,7 @@ async def toggle_student_mode(school_id: int = Body(...)):
 
 #region SSE EVENTS
 
+# MAR DEBE DE CONSUMIR ESTE PARA LA ENTRADA Y LA SALIDA, ESTE LE VA A DECIR CUANDO HAY UN CAMBIO DESDE EL CLIENTE
 @app.get("/api2/events/{school_id}")
 async def sse_events(school_id: int):
     async def event_stream():
@@ -611,11 +652,11 @@ async def sse_events(school_id: int):
                         yield f"data: {json.dumps(event)}\n\n"
                         print(f"[SSE] Evento enviado a escuela {school_id}: {event['type']}")
                     except queue.Empty:
-                        # Si no hay eventos, enviar ping para mantener conexión viva
+                        # Si no hay eventos, enviar ping para mantener conexión viva (sin log)
                         yield f"data: {json.dumps({'type': 'ping', 'timestamp': datetime.now().isoformat()})}\n\n"
                     
                     # Esperar un poco antes de verificar nuevos eventos
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(10)  # Cambiar de 2 a 10 segundos
                     
                 except Exception as e:
                     print(f"[SSE] Error enviando evento a escuela {school_id}: {e}")
@@ -724,7 +765,7 @@ async def crear_entrada(request: Request, school_id: int, tipo_salida: str = Non
     
     # ROUTING POR HORA
     hora_actual = datetime.now().hour
-    
+
     if 7 <= hora_actual <= 12:  # De 7 a 12 = ENTRADA (registrar_entrada)
         print(f"[ROUTING] Hora {hora_actual} - Llamando a registrar_entrada()")
         
@@ -756,31 +797,43 @@ async def crear_entrada(request: Request, school_id: int, tipo_salida: str = Non
         fake_file = UploadFile(
             filename="image.jpg",
             file=BytesIO(contents),
-            content_type="image/jpeg"
+            headers={"content-type": "image/jpg"}
         )
         
-        # DECIDIR QUÉ MÉTODO USAR EN SALIDA BASADO EN STUDENT_MODE DE LA ESCUELA
-        school_student_mode = get_school_student_mode(school_id)
+        # NUEVO: DECIDIR QUÉ MÉTODO USAR EN SALIDA BASADO EN EL ESTADO DE LA ESCUELA
+        school_state = get_school_state(school_id)
         
-        # Si student_mode está activo para esta escuela, automáticamente usar "student"
-        if school_student_mode:
-            tipo_salida_efectivo = "student"
-            print(f"[ROUTING] Hora {hora_actual} - STUDENT_MODE ACTIVO en escuela {school_id} - Forzando tipo_salida='student'")
-        else:
-            # Si no está activo, usar el parámetro original o default "guardian"
-            tipo_salida_efectivo = tipo_salida or "guardian"
-            print(f"[ROUTING] Hora {hora_actual} - STUDENT_MODE INACTIVO en escuela {school_id} - Usando tipo_salida='{tipo_salida_efectivo}'")
-        
-        # Ejecutar según el tipo efectivo
-        if tipo_salida_efectivo == "student":
-            print(f"[ROUTING] Llamando a busca_student() para SALIDA")
+        if school_state == "salida_students":
+            # Si está en modo estudiantes, buscar solo estudiantes
+            print(f"[ROUTING] Hora {hora_actual} - Estado '{school_state}' en escuela {school_id} - Buscando estudiantes")
             resultado = await busca_student(school_id, fake_file)
             metodo_usado = "busca_student"
             
-        else:  # Por defecto "guardian"
-            print(f"[ROUTING] Llamando a busca_guardian() para SALIDA")
+        elif school_state == "salida_guardian":
+            # Si está en modo guardian, buscar solo guardianes/autorizados
+            print(f"[ROUTING] Hora {hora_actual} - Estado '{school_state}' en escuela {school_id} - Buscando guardianes")
             resultado = await busca_guardian(school_id, fake_file)
             metodo_usado = "busca_guardian"
+            
+        else:  # Estado "normal" o cualquier otro
+            # Comportamiento original: usar student_mode o parámetro tipo_salida
+            school_student_mode = get_school_student_mode(school_id)
+            
+            if school_student_mode:
+                tipo_salida_efectivo = "student"
+                print(f"[ROUTING] Hora {hora_actual} - STUDENT_MODE ACTIVO en escuela {school_id} - Forzando tipo_salida='student'")
+            else:
+                tipo_salida_efectivo = tipo_salida or "guardian"
+                print(f"[ROUTING] Hora {hora_actual} - STUDENT_MODE INACTIVO en escuela {school_id} - Usando tipo_salida='{tipo_salida_efectivo}'")
+            
+            if tipo_salida_efectivo == "student":
+                print(f"[ROUTING] Llamando a busca_student() para SALIDA")
+                resultado = await busca_student(school_id, fake_file)
+                metodo_usado = "busca_student"
+            else:
+                print(f"[ROUTING] Llamando a busca_guardian() para SALIDA")
+                resultado = await busca_guardian(school_id, fake_file)
+                metodo_usado = "busca_guardian"
         
         # Agregar info de routing al resultado
         if isinstance(resultado, dict):
@@ -789,9 +842,10 @@ async def crear_entrada(request: Request, school_id: int, tipo_salida: str = Non
                 "metodo_usado": metodo_usado,
                 "motivo": "Horario de salida (fuera de 7-12)",
                 "school_id": school_id,
-                "student_mode_activo": school_student_mode,
+                "school_state": school_state,
+                "student_mode_activo": get_school_student_mode(school_id),
                 "tipo_salida_original": tipo_salida,
-                "tipo_salida_efectivo": tipo_salida_efectivo
+                "tipo_salida_efectivo": tipo_salida_efectivo if school_state == "normal" else school_state
             }
         
         return resultado
@@ -1061,3 +1115,9 @@ async def registrar_salida(request: Request, school_id: int):
 #AL INICIAR SALIDA, EL CLIENTE SOLO LE PIDE A PYTHON EL BUSCAR GUARDIAN Y TOMA EL VALOR DEL REGISTRO OBTENIDO EN LA FOTO DE LA CAMARA, OSEA, TOMA FOTO A ESA HORA Y PYTHON RESPONDE PARA EL CLIENTE, ESA RESPUESTA DEBO MAPEARLA PARA QUE LE DÉ EL RESULTADO DE ESE FULANO, EMPIEZA AQUÍ CREO Y LUEGO VA HASTA LARAVEL PARA TENER EL TUTOR O FULANO COMPLETO Y SUS RELACIONES, YA ESO QUE LO GUARDE EN ALGÚN LADO PARA SEGUIR LA OPERACIÓN AHORA CON LOS STUDENTS, IGUAL Y UN BOTÓN QUE DIGA TIPO, CONFIRMAR QUE SÍ ES ESTE EL TUTOR? SI SÍ, QUE GUARDE EN ALGUN LADO QUE AHORA SIGUEN SUS STUDENTS Y SE LO MANDA A PYTHON SUPONGO PARA QUE ESTE SEPA OK DESDE AQUÍ YA TOCA PURO STUDENT PARA QUE LAS PROXIMAS FOTOS SEPA HACIA DÓNDE VA, LUEGO DE ESO QUE USE EL DE BUSCA STUDENT Y EL RESULTADO IGUAL QUE LO MUESTRE Y LO DEBO MAPEAR PARA VER EL RESULTADO, CREO QUE EMPIEZA AQUÍ Y SE VA A LARAVEL PARA RETORNAR ESE OBJETO, YA PARA IR LLENANDO EL ARREGLO DE REGISTRO DE SALIDA, Y CUANDO YA SE ACABA EL REGISTRO QUE LO ENVÍE A LARAVEL COMO FORMULARIO Y FIN, LE QUITA EL VALOR ESTE DE QUE DICE EL CLIENTE QUE YA TOCA PURO STUDENT, SE LO QUITAMOS PARA QUE VUELVA A SOLO TUTORES Y REPETIR CICLO, LA CÁMARA NO SABE NADA, SOLO TOMA FOTOS
 
 #POR HORARIO, SABE QUE VA A BUSCAR AL GUARDIAN PARA LA SALIDA, LA COSA ES, UNA VEZ RETORNADO EL RESULTADO, PIENSO, DEBERÍA DE DECIR EL CLIENTE QUE AH SÍ ES, Y CON ESO DE ALGUNA MANERA ENVIARME A PYTHON COMO TAL UNA VARIABLE GLOBAL, STUDENT_MODE, SI EL TUTOR OBTENIDO ES Y ASÍ PUES ENVIA ESA SEÑAL PARA ACÁ Y SE GUARDA EN LA VARIABLE, PARA QUE DESDE AHÍ PYTHON SEPA QUE EN CREAR ENTRADA, SI ESE STUDENT MODE ESTÁ ACTIVO, ENTONCES NOMÁS USA EL MÉTODO DE BUSCAR STUDENTS, Y ASÍ SE VA, LUEGO CUANDO YA EL CLIENTE ENVIE EL REGISTRO COMPLETO A LARAVEL, QUE ESTE TAMBIÉN LE DIGA AL PYTHON DE QUE OYE CARNAL, DESACTIVA STUDENT_MODE Y ASÍ LISTO
+
+#el cliente envía la señal de inicia salida, pero por escuela, que python la reciba y sepa que esa escuela está en modo salida, ya con eso hecho, la primera búsqueda de ley es a tutores, a partir de ahí el resto es nomás hacia estudiantes, para tener n cantidad de ellos, cuando ya tenga todos, que terminar salida del escritorio emita también una señal hacia acá, dónde ya el proceso de búsqueda de python deja de ser a estudaintes y vuelve a tutores, debo ver en laravel cómo hago eso pero creo que en python ya debería de jalar así, ojalá
+
+#necesito un endpoint de python para que cliente escritorio le diga a crear entrada que es para salidas
+#si es salida, se mantiene este estado, la primera foto es hacia tutores, a partir de ahí el resto a estudiantes
+#cuando acabe de hacer eso, el cliente ya teniendo a todos sus monos, envía a laravel al método de la salida que ya está hecho, y a python solo le dice que ya el estado anterior se fue, osea que vuelve a estar buscando tutores
