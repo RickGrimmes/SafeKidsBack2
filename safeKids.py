@@ -148,7 +148,7 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
             return False, "La imagen está demasiado oscura. Busca mejor iluminación."
         if brightness > 240: 
             return False, "La imagen está demasiado clara o sobreexpuesta."
-        img.save(ruta_completa, format="JPG", quality=80, optimize=True)
+        img.save(ruta_completa, format="JPEG", quality=80, optimize=True)
         return True, ruta_completa
     except Exception as e:
         return False, f"Error al guardar la imagen: {e}"
