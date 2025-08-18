@@ -24,6 +24,16 @@ event_queues: Dict[int, queue.Queue] = {}  # {school_id: queue_of_events}
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],    # permite todos los orígenes
+    allow_methods=["*"],    # permite todos los métodos HTTP
+    allow_headers=["*"],    # permite todos los headers
+    # Nota: no uses allow_credentials=True con allow_origins=["*"]
+)
+
 # --- Constantes de tipos permitidos ---
 TIPOS_PERMITIDOS = {"AUTHORIZEDS", "DIRECTOR", "GUARDIANS", "SECRETARY", "STUDENTS"}
 
