@@ -148,7 +148,18 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
             return False, "La imagen está demasiado oscura. Busca mejor iluminación."
         if brightness > 240: 
             return False, "La imagen está demasiado clara o sobreexpuesta."
-        img.save(ruta_completa, format="JPEG", quality=80, optimize=True)
+        
+        # DOWNGRADE PARA IGUALAR CONDICIONES CON ESP32CAM
+        # Redimensionar a resolución VGA (640x480) como ESP32CAM
+        esp32_size = (640, 480)
+        img_downgraded = img.resize(esp32_size, Image.LANCZOS)
+        
+        # Aplicar ligero blur para simular sensor básico de ESP32CAM
+        from PIL import ImageFilter
+        img_downgraded = img_downgraded.filter(ImageFilter.GaussianBlur(radius=0.5))
+        
+        # Guardar con compresión similar a ESP32CAM (menor calidad)
+        img_downgraded.save(ruta_completa, format="JPEG", quality=60, optimize=True)
         return True, ruta_completa
     except Exception as e:
         return False, f"Error al guardar la imagen: {e}"
@@ -440,17 +451,9 @@ async def eliminar_escuela(school_id: int = Body(...)):
     ruta_escuela = os.path.join(IMG_ROUTE, nombre_carpeta)
     if not os.path.isdir(ruta_escuela):
         return JSONResponse(content={"success": False, "message": f"La escuela '{school_id}' no existe."}, status_code=404)
-    # Revisar cada subcarpeta
-    for subcarpeta in os.listdir(ruta_escuela):
-        ruta_sub = os.path.join(ruta_escuela, subcarpeta)
-        if os.path.isdir(ruta_sub):
-            archivos_jpg = glob.glob(os.path.join(ruta_sub, "*.jpg"))
-            if archivos_jpg:
-                return JSONResponse(content={"success": False, "message": f"No se puede eliminar la escuela '{school_id}' porque la carpeta '{subcarpeta}' tiene imágenes de usuarios."}, status_code=400)
-    # Si no hay imágenes, eliminar toda la escuela
     try:
         shutil.rmtree(ruta_escuela)
-        return {"success": True, "message": f"Escuela '{school_id}' eliminada exitosamente con todas sus carpetas."}
+        return {"success": True, "message": f"Escuela '{school_id}' eliminada exitosamente con TODOS sus contenidos (archivos, carpetas, usuarios, etc.)."}
     except Exception as e:
         return JSONResponse(content={"success": False, "message": f"Error al eliminar la escuela: {e}"}, status_code=500)
 
@@ -1098,26 +1101,4 @@ async def registrar_salida(request: Request, school_id: int):
 
 #endregion
 
-
-# En la entrada, el niño solo se escanea, la cámara ya tiene el método que es y detecta la hora, si es para entrar entonces este cae en el registrar entrada y ya con eso se completa, hay que ver si sí se cumple ese ciclo pero listo hasta ahí
-# En la salida, se usarán 2 métodos al menos, el cliente inicia la salida, debe enviar que sea salida, por lo que se puede tanto por la hora como tengo como porque manualmente ya le puso la secretaria salida, prioridad a la secretaria, entonces, primero ella debe marcar que es salida, ella comienza la comunicación
-
-#PROCESO DE SALIDA DE FIN A INICIO
-#CLIENTE GUARDA SALIDA Y LE ENVÍA A LARAVEL PARA CREAR REGISTRO
-#SE OBTIENEN LOS REGISTROS DE CADA NIÑO PARA VER SI SÍ ES, SE ESCANEAN Y AQUÍ EN PYTHON SE DEVUELVE UN RESULTADO QUE VA A INTERPRETAR LARAVEL Y MOSTRAR AL CLIENTE
-#NIÑO SE ESCANEA Y LA CÁMARA LE DICE A PYTHON QUE ES PARA ESTUDIANTES DE LEY
-#SE OBTIENE EL REGISTRO DEL TUTOR O AUTORIZADO SI SÍ ES, Y PUES MUESTRA LOS CHIQUILLOS ASOCIADOS
-#SE TOMA FOTO AL SEÑOR, YA SABE QUE ES TUTOR O AUTORIZADO POR SER SALIDA, COMO QUIERA PYTHON USA EL MISMO MÉTODO PARA AMBOS, POR LO QUE LO BUSCA ASÍ
-#ENTORNO SE PREPARA PARA SALIDA, PORQUE EL CLIENTE DIJO QUE ES SALIDA
-#el cliente debe mandar una señal para avisar que es salida
-#CLIENTE PONE QUE YA TOCA SALIDA PARA EMPEZAR A ESCANEAR
-
-#AL INICIAR SALIDA, EL CLIENTE SOLO LE PIDE A PYTHON EL BUSCAR GUARDIAN Y TOMA EL VALOR DEL REGISTRO OBTENIDO EN LA FOTO DE LA CAMARA, OSEA, TOMA FOTO A ESA HORA Y PYTHON RESPONDE PARA EL CLIENTE, ESA RESPUESTA DEBO MAPEARLA PARA QUE LE DÉ EL RESULTADO DE ESE FULANO, EMPIEZA AQUÍ CREO Y LUEGO VA HASTA LARAVEL PARA TENER EL TUTOR O FULANO COMPLETO Y SUS RELACIONES, YA ESO QUE LO GUARDE EN ALGÚN LADO PARA SEGUIR LA OPERACIÓN AHORA CON LOS STUDENTS, IGUAL Y UN BOTÓN QUE DIGA TIPO, CONFIRMAR QUE SÍ ES ESTE EL TUTOR? SI SÍ, QUE GUARDE EN ALGUN LADO QUE AHORA SIGUEN SUS STUDENTS Y SE LO MANDA A PYTHON SUPONGO PARA QUE ESTE SEPA OK DESDE AQUÍ YA TOCA PURO STUDENT PARA QUE LAS PROXIMAS FOTOS SEPA HACIA DÓNDE VA, LUEGO DE ESO QUE USE EL DE BUSCA STUDENT Y EL RESULTADO IGUAL QUE LO MUESTRE Y LO DEBO MAPEAR PARA VER EL RESULTADO, CREO QUE EMPIEZA AQUÍ Y SE VA A LARAVEL PARA RETORNAR ESE OBJETO, YA PARA IR LLENANDO EL ARREGLO DE REGISTRO DE SALIDA, Y CUANDO YA SE ACABA EL REGISTRO QUE LO ENVÍE A LARAVEL COMO FORMULARIO Y FIN, LE QUITA EL VALOR ESTE DE QUE DICE EL CLIENTE QUE YA TOCA PURO STUDENT, SE LO QUITAMOS PARA QUE VUELVA A SOLO TUTORES Y REPETIR CICLO, LA CÁMARA NO SABE NADA, SOLO TOMA FOTOS
-
-#POR HORARIO, SABE QUE VA A BUSCAR AL GUARDIAN PARA LA SALIDA, LA COSA ES, UNA VEZ RETORNADO EL RESULTADO, PIENSO, DEBERÍA DE DECIR EL CLIENTE QUE AH SÍ ES, Y CON ESO DE ALGUNA MANERA ENVIARME A PYTHON COMO TAL UNA VARIABLE GLOBAL, STUDENT_MODE, SI EL TUTOR OBTENIDO ES Y ASÍ PUES ENVIA ESA SEÑAL PARA ACÁ Y SE GUARDA EN LA VARIABLE, PARA QUE DESDE AHÍ PYTHON SEPA QUE EN CREAR ENTRADA, SI ESE STUDENT MODE ESTÁ ACTIVO, ENTONCES NOMÁS USA EL MÉTODO DE BUSCAR STUDENTS, Y ASÍ SE VA, LUEGO CUANDO YA EL CLIENTE ENVIE EL REGISTRO COMPLETO A LARAVEL, QUE ESTE TAMBIÉN LE DIGA AL PYTHON DE QUE OYE CARNAL, DESACTIVA STUDENT_MODE Y ASÍ LISTO
-
-#el cliente envía la señal de inicia salida, pero por escuela, que python la reciba y sepa que esa escuela está en modo salida, ya con eso hecho, la primera búsqueda de ley es a tutores, a partir de ahí el resto es nomás hacia estudiantes, para tener n cantidad de ellos, cuando ya tenga todos, que terminar salida del escritorio emita también una señal hacia acá, dónde ya el proceso de búsqueda de python deja de ser a estudaintes y vuelve a tutores, debo ver en laravel cómo hago eso pero creo que en python ya debería de jalar así, ojalá
-
-#necesito un endpoint de python para que cliente escritorio le diga a crear entrada que es para salidas
-#si es salida, se mantiene este estado, la primera foto es hacia tutores, a partir de ahí el resto a estudiantes
-#cuando acabe de hacer eso, el cliente ya teniendo a todos sus monos, envía a laravel al método de la salida que ya está hecho, y a python solo le dice que ya el estado anterior se fue, osea que vuelve a estar buscando tutores
+# python -m uvicorn safeKids:app --reload --port 8001 --host=0.0.0.0
