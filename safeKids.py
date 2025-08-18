@@ -188,8 +188,8 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
         # PASO 3: CROP del área del rostro expandida
         face_crop = img.crop((new_x, new_y, new_x + expanded_w, new_y + expanded_h))
         
-        # PASO 4: RESIZE directo a 320x240 (puede deformar ligeramente, pero es consistente)
-        esp32_size = (320, 240)
+        # PASO 4: RESIZE directo a 640x480 (puede deformar ligeramente, pero es consistente)
+        esp32_size = (640, 480)
         
         # RESIZE DIRECTO sin mantener proporciones para llenar todo el espacio
         # Esto es más realista - el ESP32CAM también "deforma" un poco para llenar la resolución
@@ -197,10 +197,10 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
         
         # PASO 5: Aplicar procesamiento para simular ESP32CAM
         from PIL import ImageFilter
-        img_downgraded = img_downgraded.filter(ImageFilter.GaussianBlur(radius=0.8))
+        img_downgraded = img_downgraded.filter(ImageFilter.GaussianBlur(radius=0.5))
         
         # Guardar con compresión similar a ESP32CAM
-        img_downgraded.save(ruta_completa, format="JPEG", quality=50, optimize=True)
+        img_downgraded.save(ruta_completa, format="JPEG", quality=60, optimize=True)
         return True, ruta_completa
     except Exception as e:
         return False, f"Error al guardar la imagen: {e}"
