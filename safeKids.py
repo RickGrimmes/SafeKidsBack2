@@ -160,16 +160,47 @@ def guardar_imagen(escuela, tipo, file: UploadFile, id: str, firstName: str, las
             return False, "La imagen está demasiado clara o sobreexpuesta."
         
         # DOWNGRADE PARA IGUALAR CONDICIONES CON ESP32CAM
-        # Redimensionar a resolución VGA (640x480) como ESP32CAM
-        esp32_size = (640, 480)
-        img_downgraded = img.resize(esp32_size, Image.LANCZOS)
+        # PASO 1: EXTRAER ÁREA DEL ROSTRO de la detección que ya hicimos arriba
+        face_region = deteccion[0].get('facial_area') or deteccion[0].get('region')
         
-        # Aplicar ligero blur para simular sensor básico de ESP32CAM
+        # Obtener coordenadas del rostro detectado
+        face_x = face_region.get('x', 0)
+        face_y = face_region.get('y', 0) 
+        face_w = face_region.get('w') or face_region.get('width')
+        face_h = face_region.get('h') or face_region.get('height')
+        
+        # PASO 2: EXPANDIR área del rostro para incluir contexto (hombros, frente, etc.)
+        # Expandir 40% en cada dirección para tener más contexto
+        expand_factor = 0.4
+        expanded_w = int(face_w * (1 + expand_factor * 2))
+        expanded_h = int(face_h * (1 + expand_factor * 2))
+        
+        # Calcular nueva posición centrada
+        center_x = face_x + face_w // 2
+        center_y = face_y + face_h // 2
+        new_x = max(0, center_x - expanded_w // 2)
+        new_y = max(0, center_y - expanded_h // 2)
+        
+        # Asegurar que no se salga de los límites de la imagen
+        new_x = min(new_x, img.width - expanded_w) if new_x + expanded_w <= img.width else max(0, img.width - expanded_w)
+        new_y = min(new_y, img.height - expanded_h) if new_y + expanded_h <= img.height else max(0, img.height - expanded_h)
+        
+        # PASO 3: CROP del área del rostro expandida
+        face_crop = img.crop((new_x, new_y, new_x + expanded_w, new_y + expanded_h))
+        
+        # PASO 4: RESIZE directo a 320x240 (puede deformar ligeramente, pero es consistente)
+        esp32_size = (320, 240)
+        
+        # RESIZE DIRECTO sin mantener proporciones para llenar todo el espacio
+        # Esto es más realista - el ESP32CAM también "deforma" un poco para llenar la resolución
+        img_downgraded = face_crop.resize(esp32_size, Image.LANCZOS)
+        
+        # PASO 5: Aplicar procesamiento para simular ESP32CAM
         from PIL import ImageFilter
-        img_downgraded = img_downgraded.filter(ImageFilter.GaussianBlur(radius=0.5))
+        img_downgraded = img_downgraded.filter(ImageFilter.GaussianBlur(radius=0.8))
         
-        # Guardar con compresión similar a ESP32CAM (menor calidad)
-        img_downgraded.save(ruta_completa, format="JPEG", quality=60, optimize=True)
+        # Guardar con compresión similar a ESP32CAM
+        img_downgraded.save(ruta_completa, format="JPEG", quality=50, optimize=True)
         return True, ruta_completa
     except Exception as e:
         return False, f"Error al guardar la imagen: {e}"
